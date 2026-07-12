@@ -116,7 +116,76 @@ class ClassificationTrainer(pl.LightningModule):
 
     def optimizer_lr(self) -> float:
         """LR из partial-фабрики оптимизатора (для param_groups base_lr)."""
-        kw = getattr(self.optimizer_factory, "keywords", {})
-        if "lr" in kw:
-            return float(kw["lr"])
-        raise ValueError("optimizer partial должен задавать lr= (нужен для base_lr param-групп)")
+        return _partial_lr(self.optimizer_factory)
+
+
+def _partial_lr(optimizer_factory) -> float:
+    kw = getattr(optimizer_factory, "keywords", {})
+    if "lr" in kw:
+        return float(kw["lr"])
+    raise ValueError("optimizer partial должен задавать lr= (нужен для base_lr param-групп)")
+
+
+class SSLTrainer(pl.LightningModule):
+    """Единый трейнер SSL для ЛЮБОГО :class:`~vision_lab.ssl.base.SSLMethod`.
+
+    * ``training_step`` — ``method(batch) -> dict лоссов``;
+    * ``on_before_zero_grad`` — ``method.momentum_update()`` (ровно раз на
+      optimizer step, после step() — корректно при grad accumulation);
+    * ``validation_step`` — no-op: включает val-цикл, чтобы probe-коллбеки
+      получали батчи через ``on_validation_batch_end``.
+
+    Расписания (EMA-tau, teacher-temp, weight decay) навешиваются снаружи через
+    :class:`~vision_lab.core.schedules.ScheduleDriver`; probe — через
+    :class:`~vision_lab.core.callbacks.KNNProbeCallback`.
+    """
+
+    def __init__(
+        self,
+        method: nn.Module,
+        optimizer: Callable[..., torch.optim.Optimizer],
+        warmup_steps: int = 0,
+        weight_decay: float = 0.0,
+        monitor_metric: str = "val/sel_f1",
+    ):
+        super().__init__()
+        self.method = method
+        self.optimizer_factory = optimizer
+        self.warmup_steps = warmup_steps
+        self.weight_decay = weight_decay
+        self.monitor_metric = monitor_metric
+        self._train_losses: dict[str, torchmetrics.MeanMetric] = {}
+
+    def training_step(self, batch, batch_idx):
+        losses = self.method(batch)
+        for name, value in losses.items():
+            key = f"train/{name}"
+            if key not in self._train_losses:
+                self._train_losses[key] = torchmetrics.MeanMetric().to(value.device)
+            self._train_losses[key].update(value.detach())
+        self.log("train/lr", self.optimizers().param_groups[0]["lr"], on_step=True, on_epoch=False)
+        self.log("sched/current_tau", float(getattr(self.method, "current_tau", 1.0)),
+                 on_step=True, on_epoch=False)
+        return losses["total_loss"]
+
+    def on_before_zero_grad(self, optimizer):
+        # EMA-обновление учителя: ровно раз на optimizer step, ПОСЛЕ step()
+        self.method.momentum_update()
+
+    def on_train_epoch_end(self):
+        for key, metric in self._train_losses.items():
+            self.log(f"{key}_epoch", metric.compute(), sync_dist=True)
+            metric.reset()
+
+    def validation_step(self, batch, batch_idx, dataloader_idx: int = 0):
+        # намеренный no-op: батчи обрабатывают probe-коллбеки
+        return None
+
+    def configure_optimizers(self):
+        groups = param_groups({"method": self.method}, base_lr=_partial_lr(self.optimizer_factory),
+                              weight_decay=self.weight_decay)
+        optimizer = self.optimizer_factory(groups)
+        total_steps = self.trainer.estimated_stepping_batches
+        scheduler = build_warmup_cosine(optimizer, self.warmup_steps, total_steps)
+        return {"optimizer": optimizer,
+                "lr_scheduler": {"scheduler": scheduler, "interval": "step"}}
