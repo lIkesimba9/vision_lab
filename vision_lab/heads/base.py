@@ -19,8 +19,6 @@ from collections.abc import Mapping
 import torch
 from torch import nn
 
-from vision_lab.core.checkpoint import extract_fc_weights
-
 
 class ClassifierHead(nn.Module):
     """База всех голов-классификаторов.
@@ -65,6 +63,9 @@ class ClassifierHead(nn.Module):
     @torch.no_grad()
     def load_fc_weights(self, source, load_bias: bool = True) -> None:
         """Грузит ``[C, D]``-веса классификатора (+ опц. bias) из ``source``."""
+        # ленивый импорт: разрывает цикл heads.base -> core.checkpoint -> core.module -> heads.base
+        from vision_lab.core.checkpoint import extract_fc_weights
+
         weight, bias = extract_fc_weights(source, self.n_class, self.embedding_dim)
         self.classifier_weight.copy_(weight.to(self.classifier_weight))
         if load_bias and bias is not None:

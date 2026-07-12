@@ -7,6 +7,7 @@ from vision_lab.data.samplers import (
     PKCoverageBatchSampler,
     PositivePairsBatchSampler,
 )
+from vision_lab.data.semi_supervised import combined_semi_supervised_loader
 from vision_lab.data.taxonomy import Taxonomy
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "PKBatchSampler",
     "PKCoverageBatchSampler",
     "PositivePairsBatchSampler",
+    "combined_semi_supervised_loader",
     "Taxonomy",
 ]
