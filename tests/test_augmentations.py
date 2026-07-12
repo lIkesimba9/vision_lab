@@ -1,8 +1,7 @@
+import kornia.augmentation as K
 import numpy as np
 import pytest
 import torch
-
-import kornia.augmentation as K
 
 from vision_lab.data.transforms import build_classification_transform
 from vision_lab.ssl.gpu_augs import (

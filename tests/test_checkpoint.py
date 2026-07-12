@@ -63,7 +63,7 @@ def test_load_backbone_from_lightning_file(tmp_path):
     report = load_backbone(dst, path)  # weights_only=True по умолчанию
     assert report.prefix == "backbone.net."
     assert not report.missing and not report.unexpected
-    for a, b in zip(dst.parameters(), src.parameters()):
+    for a, b in zip(dst.parameters(), src.parameters(), strict=True):
         assert torch.equal(a, b)
 
 
