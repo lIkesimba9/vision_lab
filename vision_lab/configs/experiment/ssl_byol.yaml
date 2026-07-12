@@ -1,0 +1,31 @@
+# Эталонный BYOL-претрейн (§5.2): первым портируется, рабочий на реальных данных.
+module:
+  _target_: vision_lab.core.SSLTrainer
+  warmup_steps: 1000
+  weight_decay: 1e-6
+  monitor_metric: val/sel_f1
+  method:
+    _target_: vision_lab.ssl.BYOL
+    hidden_dim: 4096
+    projection_dim: 256
+    positive_shuffle: false      # включить для supervised-contrastive без негативов
+    backbone:
+      _target_: vision_lab.models.backbones.EmbeddingBackbone
+      model_name: convnextv2_tiny
+      pretrained: true
+    views:
+      _target_: vision_lab.ssl.gpu_augs.build_ssl_views
+      recipe: byol_v1
+      image_size: 224
+  optimizer:
+    _target_: torch.optim.AdamW
+    _partial_: true
+    lr: 1e-3
+    weight_decay: 1e-6
+
+# Расписания навешиваются через ScheduleDriver (§5, §11.1)
+schedules:
+  method.current_tau:
+    _target_: vision_lab.core.CosineSchedule
+    start: 0.996
+    end: 1.0

@@ -1,0 +1,9 @@
+# Lightning Trainer. Инварианты DDP §11.1 зашиты как дефолты.
+_target_: lightning.pytorch.Trainer
+max_epochs: 100
+accelerator: auto
+devices: auto
+precision: bf16-mixed          # без grad-scaler (§11.1)
+sync_batchnorm: true           # для CNN в SSL (§11.1)
+use_distributed_sampler: false # кастомные сэмплеры сами шардят (§5.4, §11.1)
+log_every_n_steps: 20

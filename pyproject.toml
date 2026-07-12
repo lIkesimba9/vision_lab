@@ -37,6 +37,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["vision_lab"]
+# YAML-конфиги — часть пакета (эталонные Hydra-шаблоны)
+include = ["vision_lab/**/*.yaml"]
 
 [[tool.uv.index]]
 name = "pytorch-cu130"

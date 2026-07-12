@@ -1,0 +1,38 @@
+# DINOv2-стек (§5.2): DINO + iBOT + KoLeo + Sinkhorn. ViT-бэкбон для настоящего iBOT.
+module:
+  _target_: vision_lab.core.SSLTrainer
+  warmup_steps: 1000
+  weight_decay: 4e-2
+  monitor_metric: val/sel_f1
+  method:
+    _target_: vision_lab.ssl.DINOv2
+    out_dim: 65536
+    ibot_weight: 1.0
+    koleo_weight: 0.1
+    center_mode: sinkhorn
+    backbone:
+      _target_: vision_lab.models.backbones.TokenBackbone
+      model_name: vit_small_patch16_224
+      pretrained: true
+    views:
+      _target_: vision_lab.ssl.gpu_augs.build_ssl_views
+      recipe: dino_v1
+      image_size: 224
+      local_size: 96
+      n_local: 6
+  optimizer:
+    _target_: torch.optim.AdamW
+    _partial_: true
+    lr: 5e-4
+    weight_decay: 4e-2
+
+schedules:
+  method.current_tau:
+    _target_: vision_lab.core.CosineSchedule
+    start: 0.992
+    end: 1.0
+  method.teacher_temp:
+    _target_: vision_lab.core.LinearWarmupConstant
+    start: 0.04
+    value: 0.07
+    warmup_steps: 3000

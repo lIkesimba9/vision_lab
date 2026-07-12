@@ -1,0 +1,29 @@
+# Эталонный конфиг классификации (baseline-first §5.1): CE + heavy_v1.
+# Полностью самодостаточен — task-репа переопределяет model_name/n_class/данные.
+# Смоук-тест инстанцирует module с test_convnext (крошечная модель) через оверрайд.
+module:
+  _target_: vision_lab.core.ClassificationTrainer
+  num_classes: 3
+  warmup_steps: 500
+  weight_decay: 1e-4
+  backbone_lr: null              # null => как у головы (полный finetune)
+  backbone:
+    _target_: vision_lab.models.backbones.EmbeddingBackbone
+    model_name: convnextv2_tiny
+    pretrained: true
+  head:
+    _target_: vision_lab.heads.LinearHead
+    mode: ce
+    n_class: ${module.num_classes}
+    embedding_dim: ???           # = backbone.out_dim, задаётся в task-репе
+  optimizer:
+    _target_: torch.optim.AdamW
+    _partial_: true
+    lr: 1e-3
+    weight_decay: 1e-4
+
+transform:
+  _target_: vision_lab.data.transforms.build_classification_transform
+  recipe: heavy_v1
+  image_size: 224
+  train: true

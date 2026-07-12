@@ -1,0 +1,4 @@
+# GPU-вьюхи SSL (§6.1-6.3). Builder валидирует порядок и коэрцит Hydra-списки.
+_target_: vision_lab.ssl.gpu_augs.build_ssl_views
+recipe: byol_v1
+image_size: 224

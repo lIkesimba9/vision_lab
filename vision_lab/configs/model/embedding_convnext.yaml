@@ -1,0 +1,6 @@
+# EmbeddingBackbone поверх timm ConvNeXt. model_name/pretrained переопределяются в task-репе.
+_target_: vision_lab.models.backbones.EmbeddingBackbone
+model_name: convnextv2_tiny
+pretrained: true
+embedding_dim: null   # null => фичи бэкбона как есть; число => проекция Linear+BN
+dropout: 0.0

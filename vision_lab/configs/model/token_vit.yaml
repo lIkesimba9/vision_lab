@@ -1,0 +1,4 @@
+# TokenBackbone поверх timm ViT — для DINO/iBOT/MAE/I-JEPA.
+_target_: vision_lab.models.backbones.TokenBackbone
+model_name: vit_small_patch16_224
+pretrained: true

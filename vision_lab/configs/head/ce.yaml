@@ -1,0 +1,6 @@
+# Baseline-first (§5.1): эталон каждого пайплайна — CE + сильные аугментации.
+_target_: vision_lab.heads.LinearHead
+mode: ce
+n_class: ???          # обязателен в task-репе
+embedding_dim: ???
+label_smoothing: 0.0

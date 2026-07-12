@@ -1,0 +1,5 @@
+_target_: vision_lab.ssl.gpu_augs.build_ssl_views
+recipe: dino_v1
+image_size: 224
+local_size: 96
+n_local: 6

@@ -1,0 +1,4 @@
+# Корни данных/выходов. Пути — только через ${paths.*}, хардкоды запрещены (§8).
+# Task-репа переопределяет data_root под свою машину.
+data_root: ${env:VISION_LAB_DATA_ROOT,./data}
+output_root: ${env:VISION_LAB_OUTPUT_ROOT,./outputs}

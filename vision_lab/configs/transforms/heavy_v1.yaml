@@ -1,0 +1,5 @@
+# CPU-рецепт классификации (§6.1). Имя рецепта версионируется и логируется (§6.2).
+_target_: vision_lab.data.transforms.build_classification_transform
+recipe: heavy_v1
+image_size: 224
+train: true
