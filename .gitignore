@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+outputs/
+multirun/
+lightning_logs/
+tb_logs/
+*.ckpt
+*.pt
+*.pth
+.hydra/
+scratch/
