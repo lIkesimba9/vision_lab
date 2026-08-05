@@ -49,17 +49,21 @@ def _shrink(cfg):
 
 
 class SyntheticDS(Dataset):
-    def __init__(self, n=8):
-        self.n = n
+    def __init__(self, n=8, task="multiclass"):
+        self.n, self.task = n, task
 
     def __len__(self):
         return self.n
 
     def __getitem__(self, i):
         g = torch.Generator().manual_seed(i)
+        if self.task == "multilabel":
+            label = torch.randint(0, 2, (3,), generator=g)  # мульти-хот (C,)
+        else:
+            label = int(i % 3)
         return {
             "image": torch.rand(3, 32, 32, generator=g),
-            "label": int(i % 3),
+            "label": label,
             "sample_id": f"s{i}",
             "source": "syn",
         }
@@ -68,6 +72,7 @@ class SyntheticDS(Dataset):
 @pytest.mark.parametrize("path", EXPERIMENTS, ids=lambda p: p.stem)
 def test_experiment_config_instantiates_and_steps(path: Path):
     cfg = _shrink(OmegaConf.load(path))
+    task = cfg.module.get("task", "multiclass")
 
     # embedding_dim = out_dim крошечной модели (64), там где голова его требует.
     # .keys() важен: OmegaConf `in` возвращает False для MISSING (???)-значений.
@@ -88,7 +93,7 @@ def test_experiment_config_instantiates_and_steps(path: Path):
                          limit_train_batches=2, limit_val_batches=0,
                          enable_checkpointing=False, logger=False,
                          enable_progress_bar=False, enable_model_summary=False)
-    trainer.fit(module, DataLoader(SyntheticDS(), batch_size=4))
+    trainer.fit(module, DataLoader(SyntheticDS(task=task), batch_size=4))
 
 
 def test_all_component_configs_are_valid_yaml():

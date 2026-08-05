@@ -1,0 +1,33 @@
+# Multi-label классификация: MultiLabelHead(asl) + heavy_v1 (baseline-first §5.1:
+# бейзлайн семейства — mode=bce; asl — его усиление под дисбаланс позитивов).
+# Таргет — мульти-хот (B, C) из {0,1,-1}: ManifestDataset(label_kind="multilabel").
+module:
+  _target_: vision_lab.core.ClassificationTrainer
+  task: multilabel
+  num_classes: 3
+  warmup_steps: 500
+  weight_decay: 1e-4
+  backbone_lr: null              # null => как у головы (полный finetune)
+  backbone:
+    _target_: vision_lab.models.backbones.EmbeddingBackbone
+    model_name: convnextv2_tiny
+    pretrained: true
+  head:
+    _target_: vision_lab.heads.MultiLabelHead
+    mode: asl
+    n_class: ${module.num_classes}
+    embedding_dim: ???           # = backbone.out_dim, задаётся в task-репе
+    gamma_neg: 4.0
+    gamma_pos: 0.0
+    clip: 0.05
+  optimizer:
+    _target_: torch.optim.AdamW
+    _partial_: true
+    lr: 1e-3
+    weight_decay: 1e-4
+
+transform:
+  _target_: vision_lab.data.transforms.build_classification_transform
+  recipe: heavy_v1
+  image_size: 224
+  train: true

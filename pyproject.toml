@@ -25,6 +25,9 @@ dependencies = [
 [project.optional-dependencies]
 dicom = ["pydicom>=2.4"]
 
+[project.scripts]
+vision-lab-train = "vision_lab.train:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

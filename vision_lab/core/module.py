@@ -16,7 +16,12 @@ import lightning.pytorch as pl
 import torch
 import torchmetrics
 from torch import nn
-from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score
+from torchmetrics.classification import (
+    MulticlassAccuracy,
+    MulticlassF1Score,
+    MultilabelAccuracy,
+    MultilabelF1Score,
+)
 
 from vision_lab.core.batch import target_view
 from vision_lab.core.optim import param_groups
@@ -34,6 +39,12 @@ class ClassificationTrainer(pl.LightningModule):
 
     ``backbone_lr``: None — как у головы (полный finetune); 0.0 — бэкбон
     заморожен (BN-статистики адаптируются); малое — low-LR доменная адаптация.
+
+    ``task``: ``multiclass`` (дефолт; бинарная = num_classes=2) или
+    ``multilabel`` — выбирает val-метрики и разбор таргета. Multilabel ждёт
+    мульти-хот ``(B, C)`` из {0, 1, -1} (:class:`MultiLabelHead`); в метрики
+    идут только полностью размеченные строки, порог — sigmoid 0.5.
+    ``num_classes`` — число классов (multiclass) или меток (multilabel).
     """
 
     def __init__(
@@ -42,24 +53,32 @@ class ClassificationTrainer(pl.LightningModule):
         head: ClassifierHead,
         optimizer: Callable[..., torch.optim.Optimizer],
         num_classes: int,
+        task: str = "multiclass",
         warmup_steps: int = 0,
         backbone_lr: float | None = None,
         weight_decay: float = 0.0,
         monitor_metric: str = "val/f1_macro",
     ):
         super().__init__()
+        if task not in {"multiclass", "multilabel"}:
+            raise ValueError(f"task={task!r} (multiclass|multilabel)")
         self.backbone = backbone
         self.head = head
         self.optimizer_factory = optimizer
         self.num_classes = num_classes
+        self.task = task
         self.warmup_steps = warmup_steps
         self.backbone_lr = backbone_lr
         self.weight_decay = weight_decay
         self.monitor_metric = monitor_metric
 
         self._train_losses: dict[str, torchmetrics.MeanMetric] = {}
-        self.val_accuracy = MulticlassAccuracy(num_classes=num_classes)
-        self.val_f1_macro = MulticlassF1Score(num_classes=num_classes, average="macro")
+        if task == "multilabel":
+            self.val_accuracy = MultilabelAccuracy(num_labels=num_classes)
+            self.val_f1_macro = MultilabelF1Score(num_labels=num_classes, average="macro")
+        else:
+            self.val_accuracy = MulticlassAccuracy(num_classes=num_classes)
+            self.val_f1_macro = MulticlassF1Score(num_classes=num_classes, average="macro")
 
     # -- шаги ------------------------------------------------------------------
     def forward(self, images: torch.Tensor) -> torch.Tensor:
@@ -87,12 +106,25 @@ class ClassificationTrainer(pl.LightningModule):
     def validation_step(self, batch, batch_idx, dataloader_idx: int = 0):
         emb = self.backbone(batch["image"])
         logits = self.head.predict_logits(emb)
-        labels = batch["label"].long()
-        mask = labels >= 0
-        if mask.any():
-            preds = logits[mask].argmax(dim=1)
-            self.val_accuracy.update(preds, labels[mask])
-            self.val_f1_macro.update(preds, labels[mask])
+        # метрики считаются по таргету ГОЛОВЫ (multi-task: primary), не по "label"
+        labels = batch[self.head.target_key].long()
+        if self.task == "multilabel":
+            mask = (labels >= 0).all(dim=1)  # torchmetrics не умеет поэлементную маску
+            if mask.any():
+                preds = (logits[mask] > 0).long()  # sigmoid 0.5
+                self.val_accuracy.update(preds, labels[mask])
+                self.val_f1_macro.update(preds, labels[mask])
+        else:
+            if labels.ndim != 1:
+                raise ValueError(
+                    f"task='multiclass', но таргет {tuple(labels.shape)} не (B,) — "
+                    "для мульти-хот таргета задайте task='multilabel'"
+                )
+            mask = labels >= 0
+            if mask.any():
+                preds = logits[mask].argmax(dim=1)
+                self.val_accuracy.update(preds, labels[mask])
+                self.val_f1_macro.update(preds, labels[mask])
 
     def on_validation_epoch_end(self):
         self.log("val/accuracy", self.val_accuracy.compute(), prog_bar=True, sync_dist=True)

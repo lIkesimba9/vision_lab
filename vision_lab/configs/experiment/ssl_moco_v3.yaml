@@ -1,0 +1,31 @@
+# MoCo v3 (Chen 2021): momentum contrastive без очереди — негативы из батча,
+# ключи от EMA-энкодера. Асимметричные BYOL-вьюхи (как в статье).
+module:
+  _target_: vision_lab.core.SSLTrainer
+  warmup_steps: 1000
+  weight_decay: 1e-6
+  monitor_metric: val/sel_f1
+  method:
+    _target_: vision_lab.ssl.MoCoV3
+    hidden_dim: 4096
+    projection_dim: 256
+    temperature: 0.2
+    backbone:
+      _target_: vision_lab.models.backbones.EmbeddingBackbone
+      model_name: convnextv2_tiny
+      pretrained: true
+    views:
+      _target_: vision_lab.ssl.gpu_augs.build_ssl_views
+      recipe: byol_v1
+      image_size: 224
+  optimizer:
+    _target_: torch.optim.AdamW
+    _partial_: true
+    lr: 1e-3
+    weight_decay: 1e-6
+
+schedules:
+  method.current_tau:
+    _target_: vision_lab.core.CosineSchedule
+    start: 0.99
+    end: 1.0

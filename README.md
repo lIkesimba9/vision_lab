@@ -24,11 +24,13 @@ uv run pytest -q             # тесты
 | Каркас | `core/` | 2 трейнера (`ClassificationTrainer`, `SSLTrainer`), расписания, чекпоинт-контракт, DDP |
 | Данные | `data/` | сэмпл-центричный parquet-манифест, декодеры, таксономия, PK-сэмплеры, color constancy |
 | Бэкбоны | `models/backbones.py` | `Embedding`/`Spatial`/`TokenBackbone` над любой timm-моделью |
-| Головы | `heads/` | единый `ClassifierHead` + зоопарк (CE/AAM/SubCenter/LDAM/Focal/…), multi-task |
-| SSL | `ssl/` | BYOL (+positive-shuffle, multi-crop), DINOv2 (DINO+iBOT+KoLeo+Sinkhorn) |
+| Головы | `heads/` | единый `ClassifierHead` + зоопарк (CE/AAM/CosFace/LDAM/Focal/…), multi-label, multi-task, иерархия |
+| SSL | `ssl/` | BYOL, DINOv2 (DINO+iBOT+KoLeo+Sinkhorn), SimCLR, MoCo v3, SimSiam, MAE, SimMIM |
 | Оценка | `eval/`, `inference/` | kNN/linear-probe, единый инференс + flip-TTA |
 
-## Быстрый старт
+## Два режима использования
+
+**Python-модуль** — компоненты создаются явными kwargs, Hydra не обязательна:
 
 ```python
 from functools import partial
@@ -44,6 +46,22 @@ module = ClassificationTrainer(backbone, head,
                                num_classes=3)
 # trainer.fit(module, train_loader, val_loader)
 ```
+
+**CLI (Hydra)** — тот же состав собирается из YAML тонким раннером
+`vision_lab/train.py` (задачной логики в нём нет — только instantiate + fit):
+
+```bash
+# из task-репы: свои конфиги + эталонные шаблоны библиотеки
+vision-lab-train --config-dir ./configs --config-name my_experiment
+# то же без установки console-script
+python -m vision_lab.train --config-dir ./configs --config-name my_experiment \
+    module.optimizer.lr=3e-4          # hydra-оверрайды работают как обычно
+```
+
+Конфиг задаёт `module` / `data` (DataLoader поверх `ManifestDataset`) /
+`trainer` / опционально `schedules`, `callbacks`, `seed`, `resume_from` — см.
+докстринг `vision_lab/train.py`. Эталонные шаблоны `module`-части — в
+`vision_lab/configs/experiment/`; секцию `data` добавляет task-репа.
 
 SSL-претрейн → перенос бэкбона в классификацию — см. `.claude/skills/` и
 эталонные конфиги в `vision_lab/configs/experiment/`.

@@ -7,9 +7,10 @@
 Семейство      EMA-teacher       gather по рангам    masking    probe-энкодер
 ============== ================= ================== ========== ==============
 BYOL           да (online→tgt)   нет                нет        online backbone
+SimSiam        нет (stop-grad)   нет                нет        online backbone
 DINO/iBOT      да (student→tgt)  нет                iBOT: да   teacher backbone
 SimCLR/MoCo    MoCo: да          да (all_gather)    нет        online backbone
-MAE            нет               нет                да         encoder tokens
+MAE/SimMIM     нет               нет                да         encoder tokens
 I-JEPA         да (ctx→target)   нет                да         target encoder
 ============== ================= ================== ========== ==============
 

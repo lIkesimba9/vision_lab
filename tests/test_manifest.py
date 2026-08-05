@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from vision_lab.core.batch import MISSING_LABEL, target_view
-from vision_lab.data.manifest import ManifestDataset, map_labels
+from vision_lab.data.manifest import ManifestDataset, map_labels, map_multilabel
 
 
 def make_ds(tiny_dataset, **kwargs):
@@ -37,7 +37,7 @@ def test_default_collate_and_target_view(tiny_dataset):
     assert batch["label"].dtype == torch.int64
     assert batch["levels"].shape == (4, 2)
     assert isinstance(batch["sample_id"], list)
-    assert set(target_view(batch)) == {"label", "levels"}
+    assert set(target_view(batch)) == {"label", "levels", "label_coarse", "label_fine"}
 
 
 def test_levels_derived_from_taxonomy(tiny_dataset):
@@ -48,6 +48,42 @@ def test_levels_derived_from_taxonomy(tiny_dataset):
     assert ds[9]["levels"].tolist() == [MISSING_LABEL, MISSING_LABEL]
     # метки уровня для PK-сэмплера
     assert ds.level_labels("coarse").shape == (10,)
+
+
+def test_level_keys_for_hierarchical_heads(tiny_dataset):
+    """label_<level> — плоские ключи уровней для MultiTaskHead/hierarchical_head."""
+    ds = make_ds(tiny_dataset, taxonomy=tiny_dataset["taxonomy"])
+    item = ds[0]  # melanoma
+    assert item["label_coarse"] == 1 and item["label_fine"] == 1
+    assert ds[9]["label_coarse"] == MISSING_LABEL  # без метки -> -1 на всех уровнях
+
+
+def test_multilabel_mapping_and_dataset(tiny_dataset):
+    classes = ["hair", "ruler", "bubble"]
+    s = pd.Series([["hair", "bubble"], [], None])
+    hot = map_multilabel(s, {c: i for i, c in enumerate(classes)})
+    np.testing.assert_array_equal(hot, [[1, 0, 1], [0, 0, 0], [-1, -1, -1]])
+    with pytest.raises(KeyError):
+        map_multilabel(pd.Series([["TYPO"]]), {"hair": 0}, unknown="error")
+
+    df = pd.read_parquet(tiny_dataset["manifest"])
+    df["artifacts"] = [["hair"] if i % 2 == 0 else None for i in range(len(df))]
+    ds = ManifestDataset(df, root=tiny_dataset["root"], split="train",
+                         label_column="artifacts", label_kind="multilabel",
+                         classes=classes)
+    batch = next(iter(DataLoader(ds, batch_size=4)))
+    assert batch["label"].shape == (4, 3) and batch["label"].dtype == torch.int64
+    assert batch["label"][0].tolist() == [1, 0, 0]
+    assert batch["label"][1].tolist() == [-1, -1, -1]
+
+
+def test_multilabel_incompatible_with_taxonomy(tiny_dataset):
+    df = pd.read_parquet(tiny_dataset["manifest"])
+    df["artifacts"] = [None] * len(df)
+    with pytest.raises(ValueError, match="multiclass"):
+        ManifestDataset(df, root=tiny_dataset["root"], split="train",
+                        label_column="artifacts", label_kind="multilabel",
+                        classes=["hair"], taxonomy=tiny_dataset["taxonomy"])
 
 
 def test_split_and_where_filters(tiny_dataset):

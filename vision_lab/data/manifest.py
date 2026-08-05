@@ -61,6 +61,41 @@ def map_labels(
     return ids.astype(np.int64).to_numpy()
 
 
+def map_multilabel(
+    values: pd.Series,
+    class_to_id: Mapping[str, int],
+    unknown: str = "error",
+) -> np.ndarray:
+    """Списки имён классов -> мульти-хот ``(N, C)``; null -> строка из -1.
+
+    Колонка манифеста — ``list<string>`` (parquet). Присутствие списка означает
+    ПОЛНУЮ разметку строки: не перечисленные классы = 0; пустой список валиден
+    («ни один класс»). Отсутствие списка (null) — строка не размечена: -1 по
+    всем классам (маскируется головой поэлементно).
+
+    ``unknown``: 'error' — имя вне словаря роняет загрузку; 'missing' — имя
+    игнорируется (строка остаётся размеченной по остальным классам).
+    """
+    n_class = len(class_to_id)
+    out = np.full((len(values), n_class), MISSING_LABEL, dtype=np.int64)
+    for i, v in enumerate(values):
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            continue
+        row = np.zeros(n_class, dtype=np.int64)
+        for name in v:
+            idx = class_to_id.get(name)
+            if idx is None:
+                if unknown == "error":
+                    raise KeyError(
+                        f"Метка {name!r} (строка {i}) вне словаря классов. "
+                        f"Обновите словарь или задайте unknown='missing'."
+                    )
+                continue
+            row[idx] = 1
+        out[i] = row
+    return out
+
+
 class ManifestDataset(Dataset):
     """Датасет поверх parquet-манифеста; один на все форматы и задачи.
 
@@ -75,11 +110,17 @@ class ManifestDataset(Dataset):
         modality: какой вход читать (``input_<modality>_path``).
         label_column: колонка основного таргета -> ключ батча ``label``;
             None — чистый SSL без меток.
+        label_kind: ``multiclass`` (строка-имя класса -> int id) или
+            ``multilabel`` (list<string> -> мульти-хот ``(C,)`` из {0, 1, -1},
+            см. :func:`map_multilabel`).
         classes: список имён классов (id по порядку) либо готовый словарь
             имя -> id. Обязателен при label_column.
         extra_label_columns: {колонка -> ключ батча ``label_<task>``} для multi-task.
         extra_classes: словари классов для extra-колонок (по имени колонки).
-        taxonomy: добавляет в батч ``levels`` (предки метки label_column).
+        taxonomy: добавляет в батч ``levels`` (L,) и по ключу ``label_<level>``
+            на каждый уровень (для иерархических голов, см.
+            :func:`~vision_lab.heads.hierarchical_head`); предки выводятся из
+            метки label_column (только multiclass).
         transform: albumentations Compose (ожидается ключ ``image``); None —
             изображение конвертируется в CHW-тензор как есть (SSL-путь).
         preprocessing: детерминированные шаги до аугментаций
@@ -97,6 +138,7 @@ class ManifestDataset(Dataset):
         where: str | None = None,
         modality: str = "rgb",
         label_column: str | None = None,
+        label_kind: str = "multiclass",
         classes: Sequence[str] | Mapping[str, int] | None = None,
         extra_label_columns: Mapping[str, str] | None = None,
         extra_classes: Mapping[str, Sequence[str] | Mapping[str, int]] | None = None,
@@ -135,6 +177,9 @@ class ManifestDataset(Dataset):
         self.taxonomy = taxonomy
 
         # --- основной таргет -------------------------------------------------
+        if label_kind not in {"multiclass", "multilabel"}:
+            raise ValueError(f"label_kind={label_kind!r} (multiclass|multilabel)")
+        self.label_kind = label_kind
         self.labels: np.ndarray | None = None
         self._label_names: pd.Series | None = None
         if label_column is not None:
@@ -143,8 +188,11 @@ class ManifestDataset(Dataset):
             if label_column not in df.columns:
                 raise ValueError(f"Колонка {label_column!r} отсутствует в манифесте")
             self.class_to_id = _class_to_id(classes)
-            self.labels = map_labels(df[label_column], self.class_to_id, unknown)
-            self._label_names = df[label_column]
+            if label_kind == "multilabel":
+                self.labels = map_multilabel(df[label_column], self.class_to_id, unknown)
+            else:
+                self.labels = map_labels(df[label_column], self.class_to_id, unknown)
+                self._label_names = df[label_column]
 
         # --- extra-таргеты (multi-task) --------------------------------------
         self._extra: dict[str, np.ndarray] = {}
@@ -158,13 +206,23 @@ class ManifestDataset(Dataset):
 
         # --- levels из таксономии --------------------------------------------
         self._levels: np.ndarray | None = None
+        self._level_keys: tuple[str, ...] = ()
         if self.taxonomy is not None:
             if self._label_names is None:
-                raise ValueError("taxonomy требует label_column (levels выводятся из метки)")
+                raise ValueError(
+                    "taxonomy требует label_column с label_kind='multiclass' "
+                    "(levels выводятся из имени метки)"
+                )
             self._levels = np.stack([
                 self.taxonomy.levels_vector(v if isinstance(v, str) else None)
                 for v in self._label_names
             ])
+            self._level_keys = tuple(f"label_{lv}" for lv in self.taxonomy.levels)
+            clash = set(self._level_keys) & set(self._extra)
+            if clash:
+                raise ValueError(
+                    f"extra_label_columns конфликтуют с ключами уровней таксономии: {sorted(clash)}"
+                )
 
     # -- служебное ---------------------------------------------------------
     def __len__(self) -> int:
@@ -200,9 +258,14 @@ class ManifestDataset(Dataset):
             "source": str(row["source"]),
         }
         if self.labels is not None:
-            item["label"] = int(self.labels[index])
+            if self.label_kind == "multilabel":
+                item["label"] = torch.from_numpy(self.labels[index])
+            else:
+                item["label"] = int(self.labels[index])
         for batch_key, ids in self._extra.items():
             item[batch_key] = int(ids[index])
         if self._levels is not None:
             item["levels"] = torch.from_numpy(self._levels[index])
+            for j, key in enumerate(self._level_keys):
+                item[key] = int(self._levels[index, j])
         return item

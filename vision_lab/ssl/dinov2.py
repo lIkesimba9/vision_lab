@@ -25,7 +25,7 @@ from torch import nn
 
 from vision_lab.models.backbones import TokenBackbone
 from vision_lab.ssl.base import MomentumTeacher, SSLMethod
-from vision_lab.ssl.components import DINOHead, koleo_loss, sinkhorn_knopp
+from vision_lab.ssl.components import DINOHead, block_mask, koleo_loss, sinkhorn_knopp
 
 
 class DINOv2(SSLMethod):
@@ -85,18 +85,8 @@ class DINOv2(SSLMethod):
         return self.teacher.module.embed(images)
 
     def _block_mask(self, x: torch.Tensor, grid: tuple[int, int]) -> tuple[torch.Tensor, torch.Tensor]:
-        """SimMIM-style маска входа, выровненная по выходной сетке токенов.
-
-        Гарантия «не всё и не ничего»: хотя бы один токен всегда виден.
-        """
-        b, _, h, w = x.shape
-        gh, gw = grid
-        m = torch.rand(b, gh, gw, device=x.device) < self.mask_ratio
-        m_flat = m.reshape(b, gh * gw)
-        m_flat[m_flat.all(dim=1), 0] = False  # не маскируем всё
-        up = m.float().repeat_interleave(max(h // gh, 1), 1).repeat_interleave(max(w // gw, 1), 2)
-        x_masked = x * (1.0 - up.unsqueeze(1))
-        return x_masked, m_flat
+        """SimMIM-style маска входа (общая реализация — :func:`components.block_mask`)."""
+        return block_mask(x, grid, self.mask_ratio)
 
     def _teacher_probs(self, logits: torch.Tensor) -> torch.Tensor:
         if self.center_mode == "sinkhorn":

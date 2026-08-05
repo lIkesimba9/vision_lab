@@ -150,10 +150,14 @@ def build_ssl_views(
 ) -> MultiViewAugment:
     """Именованные+версионированные рецепты SSL-вьюх.
 
-    * ``byol_v1`` — 2 асимметричных глобальных вьюхи (BYOL/SimSiam):
+    * ``byol_v1`` — 2 асимметричных глобальных вьюхи (BYOL/MoCo v3):
       вьюха-1 с blur, вьюха-2 с blur+solarize.
     * ``dino_v1`` — 2 глобальных (crop 0.4–1.0) + ``n_local`` локальных
       (crop 0.05–0.4, меньший размер).
+    * ``simclr_v1`` — 2 СИММЕТРИЧНЫЕ вьюхи (Chen 2020: crop 0.2–1.0, jitter,
+      grayscale, blur 0.5) — SimCLR/SimSiam.
+    * ``mim_v1`` — 1 вьюха, только crop 0.2–1.0 + flip (MAE/SimMIM:
+      маскирование заменяет тяжёлые аугментации).
     """
     if recipe == "byol_v1":
         view1 = build_view_pipeline(image_size, scale=(0.3, 1.0), blur_p=1.0,
@@ -170,4 +174,18 @@ def build_ssl_views(
                                     mean=mean, std=std)
         return MultiViewAugment([g1, g2], local_view=local, n_local=n_local)
 
-    raise KeyError(f"Неизвестный SSL-рецепт вьюх {recipe!r}. Доступны: byol_v1, dino_v1")
+    if recipe == "simclr_v1":
+        views = [build_view_pipeline(image_size, scale=(0.2, 1.0), blur_p=0.5,
+                                     mean=mean, std=std) for _ in range(2)]
+        return MultiViewAugment(views)
+
+    if recipe == "mim_v1":
+        view = build_view_pipeline(image_size, scale=(0.2, 1.0), blur_p=0.0,
+                                   color_jitter_p=0.0, grayscale_p=0.0,
+                                   mean=mean, std=std)
+        return MultiViewAugment([view])
+
+    raise KeyError(
+        f"Неизвестный SSL-рецепт вьюх {recipe!r}. "
+        "Доступны: byol_v1, dino_v1, simclr_v1, mim_v1"
+    )

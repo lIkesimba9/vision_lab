@@ -1,0 +1,6 @@
+# CosFace / AM-Softmax: аддитивный косинусный маржин (проще ArcFace).
+_target_: vision_lab.heads.CosFaceHead
+n_class: ???
+embedding_dim: ???
+m: 0.35
+s: 30.0

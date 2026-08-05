@@ -98,6 +98,45 @@ def masked_cross_entropy(logits: torch.Tensor, target: torch.Tensor,
                            label_smoothing=label_smoothing)
 
 
+def masked_bce_with_logits(logits: torch.Tensor, target_multihot: torch.Tensor,
+                           pos_weight: torch.Tensor | None = None) -> torch.Tensor:
+    """BCE по мульти-хот таргету ``(B, C)`` из {0, 1, -1} с ПОэлементным маскированием.
+
+    ``-1`` означает «этот класс у сэмпла не размечен» (частичная разметка) —
+    элемент не даёт ни лосса, ни градиента. Нет валидных элементов — 0
+    (сохраняет граф, не роняет DDP).
+    """
+    mask = target_multihot >= 0
+    if not mask.any():
+        return logits.sum() * 0.0
+    tgt = target_multihot.clamp_min(0).to(logits.dtype)
+    pw = pos_weight.to(logits.dtype) if pos_weight is not None else None
+    loss = F.binary_cross_entropy_with_logits(logits, tgt, pos_weight=pw, reduction="none")
+    return loss[mask].mean()
+
+
+def asymmetric_loss_with_logits(logits: torch.Tensor, target_multihot: torch.Tensor,
+                                gamma_neg: float = 4.0, gamma_pos: float = 0.0,
+                                clip: float = 0.05, eps: float = 1e-8) -> torch.Tensor:
+    """Asymmetric Loss (Ridnik 2021) для multi-label; маскирует элементы с ``-1``.
+
+    ``L+ = (1-p)^γ+·log p``; ``L- = p_m^γ-·log(1-p_m)``, где ``p_m = max(p-clip, 0)``
+    (probability shifting: лёгкие негативы обнуляются). ``γ+=γ-=γ, clip=0`` —
+    focal-BCE; ``γ=0, clip=0`` — обычный BCE. Фокусирующий вес участвует в
+    градиенте (полноградиентный вариант, без detach оригинальной репы).
+    """
+    mask = target_multihot >= 0
+    if not mask.any():
+        return logits.sum() * 0.0
+    y = target_multihot.clamp_min(0).to(logits.dtype)
+    p = torch.sigmoid(logits)
+    p_m = (p - clip).clamp(0.0, 1.0) if clip > 0 else p
+    loss_pos = (1.0 - p).pow(gamma_pos) * torch.log(p.clamp_min(eps))
+    loss_neg = p_m.pow(gamma_neg) * torch.log((1.0 - p_m).clamp_min(eps))
+    loss = y * loss_pos + (1.0 - y) * loss_neg
+    return -(loss[mask]).mean()
+
+
 def has_positive_pairs(labels: torch.Tensor) -> bool:
     """Есть ли в батче хотя бы один класс с >= 2 валидными примерами (для metric-лоссов)."""
     valid = labels[valid_rows(labels)]

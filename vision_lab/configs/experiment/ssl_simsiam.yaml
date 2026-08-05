@@ -1,0 +1,24 @@
+# SimSiam (Chen & He 2021): stop-grad вместо EMA — самый простой и дешёвый
+# сиамский бейзлайн, устойчив к малым батчам. Учителя и расписаний нет.
+module:
+  _target_: vision_lab.core.SSLTrainer
+  warmup_steps: 1000
+  weight_decay: 1e-4
+  monitor_metric: val/sel_f1
+  method:
+    _target_: vision_lab.ssl.SimSiam
+    hidden_dim: 2048
+    projection_dim: 2048
+    backbone:
+      _target_: vision_lab.models.backbones.EmbeddingBackbone
+      model_name: convnextv2_tiny
+      pretrained: true
+    views:
+      _target_: vision_lab.ssl.gpu_augs.build_ssl_views
+      recipe: simclr_v1
+      image_size: 224
+  optimizer:
+    _target_: torch.optim.AdamW
+    _partial_: true
+    lr: 1e-3
+    weight_decay: 1e-4

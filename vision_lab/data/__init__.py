@@ -1,7 +1,7 @@
 """Данные: манифест-датасет, декодеры, таксономия, PK-сэмплеры, предобработка."""
 
 from vision_lab.data.decoders import decode_image, register_decoder
-from vision_lab.data.manifest import ManifestDataset, map_labels
+from vision_lab.data.manifest import ManifestDataset, map_labels, map_multilabel
 from vision_lab.data.samplers import (
     PKBatchSampler,
     PKCoverageBatchSampler,
@@ -15,6 +15,7 @@ __all__ = [
     "register_decoder",
     "ManifestDataset",
     "map_labels",
+    "map_multilabel",
     "PKBatchSampler",
     "PKCoverageBatchSampler",
     "PositivePairsBatchSampler",

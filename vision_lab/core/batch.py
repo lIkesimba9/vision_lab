@@ -38,8 +38,9 @@ class Batch(TypedDict, total=False):
     """Типизация батча. В рантайме это обычный dict."""
 
     image: Tensor  # (B, 3, H, W) float32; SSL — до Normalize, CLS — нормализован на CPU
-    label: Tensor  # (B,) long — основной таргет; -1 = не размечено
+    label: Tensor  # (B,) long — id класса; multi-label: (B, C) мульти-хот из {0,1,-1}; -1 = не размечено
     levels: Tensor  # (B, L) long — уровни таксономии (грубый -> тонкий); -1 = нет метки
+    # label_<level>: (B,) long — те же уровни плоскими ключами (для multi-task/иерархических голов)
     sample_id: list[str]
     source: list[str]  # домен/источник из колонки манифеста (§7.4), не из пути
 

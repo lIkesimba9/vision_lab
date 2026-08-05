@@ -1,5 +1,5 @@
 """Строительные блоки SSL: проекционные/предсказательные головы, DINO-голова,
-KoLeo и Sinkhorn-Knopp (порт из прототипа)."""
+KoLeo, Sinkhorn-Knopp (порт из прототипа) и MIM-примитивы (block_mask, patchify)."""
 
 from __future__ import annotations
 
@@ -57,6 +57,40 @@ class DINOHead(nn.Module):
         x = self.mlp(x)
         x = F.normalize(x, dim=-1, p=2)
         return self.last_layer(x)
+
+
+def block_mask(x: torch.Tensor, grid: tuple[int, int],
+               mask_ratio: float) -> tuple[torch.Tensor, torch.Tensor]:
+    """Маска входа блоками, выровненными по сетке токенов (iBOT/SimMIM, §5.2).
+
+    Возвращает ``(x_masked, mask_flat)``: вход с занулёнными блоками и булеву
+    маску ``(B, gh*gw)`` (True = замаскирован). Гарантия «не всё»: хотя бы один
+    токен каждого сэмпла остаётся видимым.
+    """
+    b, _, h, w = x.shape
+    gh, gw = grid
+    m = torch.rand(b, gh, gw, device=x.device) < mask_ratio
+    m_flat = m.reshape(b, gh * gw)
+    m_flat[m_flat.all(dim=1), 0] = False  # не маскируем всё
+    m = m_flat.reshape(b, gh, gw)
+    up = m.float().repeat_interleave(max(h // gh, 1), 1).repeat_interleave(max(w // gw, 1), 2)
+    x_masked = x * (1.0 - up.unsqueeze(1))
+    return x_masked, m_flat
+
+
+def patchify(x: torch.Tensor, grid: tuple[int, int]) -> torch.Tensor:
+    """``(B, C, H, W)`` → ``(B, gh*gw, ph*pw*C)`` — пиксели патчей по сетке токенов.
+
+    Таргет реконструкции MAE/SimMIM; ``ph = H // gh`` (для Swin/CNN патч —
+    рецептивная клетка выходного токена).
+    """
+    b, c, h, w = x.shape
+    gh, gw = grid
+    ph, pw = h // gh, w // gw
+    if gh * ph != h or gw * pw != w:
+        raise ValueError(f"Размер входа {(h, w)} не делится на сетку токенов {grid}")
+    x = x.reshape(b, c, gh, ph, gw, pw)
+    return x.permute(0, 2, 4, 3, 5, 1).reshape(b, gh * gw, ph * pw * c)
 
 
 def koleo_loss(x: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:

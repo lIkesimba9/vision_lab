@@ -1,0 +1,26 @@
+# SimCLR (Chen 2020): NT-Xent на симметричных вьюхах. Негативы = батч × ранги
+# (all_gather внутри forward) — критичен большой суммарный батч; при малом
+# батче предпочтительнее BYOL/MoCo v3. Учителя и расписаний нет.
+module:
+  _target_: vision_lab.core.SSLTrainer
+  warmup_steps: 1000
+  weight_decay: 1e-6
+  monitor_metric: val/sel_f1
+  method:
+    _target_: vision_lab.ssl.SimCLR
+    hidden_dim: 2048
+    projection_dim: 128
+    temperature: 0.2
+    backbone:
+      _target_: vision_lab.models.backbones.EmbeddingBackbone
+      model_name: convnextv2_tiny
+      pretrained: true
+    views:
+      _target_: vision_lab.ssl.gpu_augs.build_ssl_views
+      recipe: simclr_v1
+      image_size: 224
+  optimizer:
+    _target_: torch.optim.AdamW
+    _partial_: true
+    lr: 1e-3
+    weight_decay: 1e-6

@@ -1,0 +1,9 @@
+# Multi-label: Asymmetric Loss (Ridnik 2021). gamma_neg=gamma_pos=0, clip=0 — обычный BCE.
+# Таргет — мульти-хот (B, C) из {0,1,-1}: label_kind="multilabel" у ManifestDataset.
+_target_: vision_lab.heads.MultiLabelHead
+mode: asl
+n_class: ???
+embedding_dim: ???
+gamma_neg: 4.0
+gamma_pos: 0.0
+clip: 0.05

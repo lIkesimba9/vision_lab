@@ -1,0 +1,29 @@
+# MAE (He 2021): masked autoencoder — 75% патчей маскируется, энкодер видит
+# только видимые. Требует timm ViT; для Swin/CNN — ssl_simmim. Аугментации
+# минимальны (mim_v1): маскирование заменяет тяжёлые вьюхи. Учителя нет.
+module:
+  _target_: vision_lab.core.SSLTrainer
+  warmup_steps: 1000
+  weight_decay: 5e-2
+  monitor_metric: val/sel_f1
+  method:
+    _target_: vision_lab.ssl.MAE
+    mask_ratio: 0.75
+    norm_pix_loss: true
+    image_size: ${module.method.views.image_size}   # сетка патчей = сетке вьюхи
+    decoder_dim: 256          # статья: 512×8 — поднимите для ImageNet-масштаба
+    decoder_depth: 4
+    decoder_heads: 8
+    backbone:
+      _target_: vision_lab.models.backbones.TokenBackbone
+      model_name: vit_small_patch16_224
+      pretrained: true
+    views:
+      _target_: vision_lab.ssl.gpu_augs.build_ssl_views
+      recipe: mim_v1
+      image_size: 224
+  optimizer:
+    _target_: torch.optim.AdamW
+    _partial_: true
+    lr: 1.5e-4
+    weight_decay: 5e-2

@@ -17,7 +17,7 @@ Hydra + timm + kornia). **Только код фреймворка**; данны
 ## Карта подпакетов
 - `core/` — доменно-нейтральный фундамент:
   - `batch.py` — контракт батча (плоский dict, `target_view`);
-  - `module.py` — **два трейнера**: `ClassificationTrainer`, `SSLTrainer`;
+  - `module.py` — **два трейнера**: `ClassificationTrainer` (`task=multiclass|multilabel`), `SSLTrainer`;
   - `callbacks.py` — `KNNProbeCallback`, `topk_per_metric_checkpoints`, `FreezeParams`;
   - `schedules.py` — `CosineSchedule`/… + `ScheduleDriver` (пишет float-атрибуты);
   - `checkpoint.py` — реестр `BACKBONE_PREFIXES`, `load_backbone`, перенос FC;
@@ -26,14 +26,18 @@ Hydra + timm + kornia). **Только код фреймворка**; данны
   `samplers.py` (PK-семейство), `preprocessing/` (color constancy, source-align), `transforms/` (albumentations).
 - `models/backbones.py` — `Embedding`/`Spatial`/`TokenBackbone` над timm (атрибут `net`).
 - `heads/` — `ClassifierHead` (контракт `forward(emb, targets: Mapping)`), `primitives.py`
-  (чистые функции), `classification.py` (зоопарк), `multitask.py`.
+  (чистые функции), `classification.py` (зоопарк, включая `MultiLabelHead`),
+  `multitask.py` (`MultiTaskHead`, `hierarchical_head`).
 - `losses/metric.py` — `TripletSemiHardLoss`, `SupConLoss`.
 - `ssl/` — `base.py` (`SSLMethod`, `MomentumTeacher`), `byol.py`, `dinov2.py`,
-  `gpu_augs.py` (kornia-builder с инвариантами §6.3), `components.py`.
+  `simclr.py`, `moco.py` (MoCo v3), `simsiam.py`, `mae.py`, `simmim.py`,
+  `gpu_augs.py` (kornia-builder с инвариантами §6.3), `components.py` (+`block_mask`, `patchify`).
 - `inference/` — `Predictor` (load → transform → predict), `tta.py` (flip-TTA).
 - `eval/knn_probe.py` — kNN/linear-probe macro-F1.
 - `experimental/` — **НЕ боевое** (Proto, Speaker); не импортируется боевыми.
 - `configs/` — эталонные Hydra-шаблоны (`experiment/`, `model/`, `head/`, …).
+- `train.py` — тонкий Hydra-раннер (`vision-lab-train` / `python -m vision_lab.train
+  --config-name …`); Python-режим (явные kwargs) — равноправная альтернатива.
 
 ## Ключевые контракты
 - **Backbone → голый тензор**: `EmbeddingBackbone(x) -> (B,D)`; `TokenBackbone(x) -> (pooled, tokens, grid)`.

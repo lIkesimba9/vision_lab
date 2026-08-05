@@ -1,0 +1,25 @@
+# SimMIM (Xie 2021): masked image modeling без выкидывания токенов — блоки
+# входа зануляются, линейная голова предсказывает пиксели маски (L1).
+# Работает с любым TokenBackbone (ViT/Swin/CNN) — этим претрейнился SwinV2-G.
+module:
+  _target_: vision_lab.core.SSLTrainer
+  warmup_steps: 1000
+  weight_decay: 5e-2
+  monitor_metric: val/sel_f1
+  method:
+    _target_: vision_lab.ssl.SimMIM
+    mask_ratio: 0.6
+    patch_px: 16              # image_size // сетка токенов (ViT patch16 -> 16)
+    backbone:
+      _target_: vision_lab.models.backbones.TokenBackbone
+      model_name: vit_small_patch16_224
+      pretrained: true
+    views:
+      _target_: vision_lab.ssl.gpu_augs.build_ssl_views
+      recipe: mim_v1
+      image_size: 224
+  optimizer:
+    _target_: torch.optim.AdamW
+    _partial_: true
+    lr: 1e-4
+    weight_decay: 5e-2
