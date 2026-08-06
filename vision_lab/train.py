@@ -32,9 +32,39 @@ from omegaconf import DictConfig
 
 from vision_lab.configs import CONFIG_ROOT, register_resolvers
 from vision_lab.core import ScheduleDriver
+from vision_lab.core.dist import DistributedBatchSamplerMixin
 from vision_lab.core.runtime import configure_threads
 
 register_resolvers()
+
+
+def check_distributed_sampler(trainer: pl.Trainer, train_loader) -> None:
+    """Ловит молчаливое дублирование датасета между рангами на DDP.
+
+    ``trainer/default.yaml`` задаёт ``use_distributed_sampler=false`` — это
+    верно для PK-семейства сэмплеров, которые шардят сами через
+    :class:`~vision_lab.core.dist.DistributedBatchSamplerMixin`. Но с обычным
+    ``DataLoader(shuffle=True)`` тот же флаг означает, что КАЖДЫЙ ранг пройдёт
+    весь датасет целиком: эпоха тихо становится в ``world_size`` раз длиннее,
+    градиенты усредняются по дублям, а метрики выглядят правдоподобно. Ошибка не
+    падает и в логах никак не видна — поэтому проверяем явно.
+    """
+    if trainer.num_devices <= 1 and trainer.num_nodes <= 1:
+        return
+    if trainer._accelerator_connector.use_distributed_sampler:
+        return
+    sampler = getattr(train_loader, "batch_sampler", None)
+    if isinstance(sampler, DistributedBatchSamplerMixin):
+        return
+    raise ValueError(
+        "use_distributed_sampler=false при обычном DataLoader и "
+        f"{trainer.num_devices} устройствах: каждый ранг пройдёт весь датасет, "
+        "эпоха станет в world_size раз длиннее, а градиенты будут усреднены по "
+        "дублям. Либо поставьте trainer.use_distributed_sampler=true, либо "
+        "передайте batch_sampler из vision_lab.data.samplers (PK-семейство "
+        "шардит само). Дефолт false в trainer/default.yaml рассчитан на второй "
+        "случай."
+    )
 
 
 def run(cfg: DictConfig) -> pl.Trainer:
@@ -69,6 +99,8 @@ def run(cfg: DictConfig) -> pl.Trainer:
         trainer = instantiate(trainer_cfg, callbacks=callbacks, _convert_="all")
     else:
         trainer = pl.Trainer(callbacks=callbacks)
+
+    check_distributed_sampler(trainer, train_loader)
     trainer.fit(module, train_loader, val_loader, ckpt_path=cfg.get("resume_from"))
     return trainer
 

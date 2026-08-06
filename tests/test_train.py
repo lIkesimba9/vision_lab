@@ -101,3 +101,58 @@ def test_cli_override_from_command_line(tiny_dataset, tmp_path):
         capture_output=True, text=True, cwd=tmp_path, timeout=300,
     )
     assert result.returncode == 0, result.stderr[-3000:]
+
+
+# --- защита от молчаливого дублирования датасета на DDP -------------------------
+
+
+def _fake_trainer(devices: int, use_distributed_sampler: bool):
+    import lightning.pytorch as pl
+
+    return pl.Trainer(
+        accelerator="cpu",
+        devices=devices,
+        use_distributed_sampler=use_distributed_sampler,
+        logger=False,
+        enable_checkpointing=False,
+    )
+
+
+def _plain_loader():
+    import torch
+    from torch.utils.data import DataLoader, TensorDataset
+
+    return DataLoader(TensorDataset(torch.zeros(8, 1)), batch_size=2, shuffle=True)
+
+
+def test_ddp_guard_rejects_plain_loader_without_distributed_sampler():
+    from vision_lab.train import check_distributed_sampler
+
+    trainer = _fake_trainer(devices=2, use_distributed_sampler=False)
+    with pytest.raises(ValueError, match="use_distributed_sampler"):
+        check_distributed_sampler(trainer, _plain_loader())
+
+
+def test_ddp_guard_allows_single_device():
+    from vision_lab.train import check_distributed_sampler
+
+    check_distributed_sampler(_fake_trainer(1, False), _plain_loader())
+
+
+def test_ddp_guard_allows_distributed_sampler_enabled():
+    from vision_lab.train import check_distributed_sampler
+
+    check_distributed_sampler(_fake_trainer(2, True), _plain_loader())
+
+
+def test_ddp_guard_allows_pk_batch_sampler():
+    import torch
+    from torch.utils.data import DataLoader, TensorDataset
+
+    from vision_lab.data.samplers import PKCoverageBatchSampler
+    from vision_lab.train import check_distributed_sampler
+
+    labels = [0, 0, 1, 1, 2, 2, 0, 1]
+    sampler = PKCoverageBatchSampler(labels, batch_size=4, n_labels_per_batch=2)
+    loader = DataLoader(TensorDataset(torch.zeros(len(labels), 1)), batch_sampler=sampler)
+    check_distributed_sampler(_fake_trainer(2, False), loader)
