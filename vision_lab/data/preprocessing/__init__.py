@@ -7,6 +7,7 @@ from vision_lab.data.preprocessing.source_align import (
     compute_source_stats,
     load_source_stats,
 )
+from vision_lab.data.preprocessing.vignette import VignetteCrop, vignette_bbox
 
 __all__ = [
     "ColorConstancy",
@@ -15,4 +16,6 @@ __all__ = [
     "SourceAlignment",
     "compute_source_stats",
     "load_source_stats",
+    "VignetteCrop",
+    "vignette_bbox",
 ]

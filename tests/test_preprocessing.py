@@ -61,3 +61,63 @@ def test_compute_stats_roundtrip_with_dataset(tiny_dataset, tmp_path):
     align = SourceAlignment(path)
     out = align(np.full((4, 4, 3), 0.4, np.float32), {"source": "dev_b"})
     assert out.shape == (4, 4, 3) and out.dtype == np.float32
+
+
+# --- обрезка виньетки ----------------------------------------------------------
+
+
+def _circular_frame(side: int = 64, radius_frac: float = 0.45) -> np.ndarray:
+    """Кадр с круглым полем зрения: светлый круг на чёрном фоне."""
+    yy, xx = np.mgrid[0:side, 0:side]
+    c = (side - 1) / 2.0
+    inside = (xx - c) ** 2 + (yy - c) ** 2 <= (radius_frac * side) ** 2
+    img = np.zeros((side, side, 3), np.float32)
+    img[inside] = 0.7
+    return img
+
+
+def test_vignette_crop_removes_dark_border():
+    from vision_lab.data.preprocessing import VignetteCrop, vignette_bbox
+
+    img = _circular_frame()
+    x0, y0, x1, y1 = vignette_bbox(img)
+    assert (x1 - x0) < img.shape[1] and (y1 - y0) < img.shape[0]
+
+    out = VignetteCrop()(img, {"source": "dev"})
+    # во вписанном прямоугольнике чёрных пикселей не остаётся
+    assert (out.max(axis=2) <= 0.15).mean() == 0.0
+    assert out.shape[2] == 3
+
+
+def test_vignette_crop_leaves_clean_image_untouched():
+    from vision_lab.data.preprocessing import VignetteCrop
+
+    rng = np.random.RandomState(0)
+    img = rng.uniform(0.3, 0.9, (32, 32, 3)).astype(np.float32)
+    out = VignetteCrop()(img, {"source": "dev"})
+    np.testing.assert_array_equal(out, img)
+
+
+def test_vignette_crop_handles_offcenter_border():
+    from vision_lab.data.preprocessing import vignette_bbox
+
+    img = np.zeros((64, 64, 3), np.float32)
+    img[8:56, 20:60] = 0.6  # светлая область смещена вправо
+    x0, y0, x1, y1 = vignette_bbox(img, inscribe=False)
+    assert (x0, y0, x1, y1) == (20, 8, 60, 56)
+
+
+def test_vignette_bbox_accepts_uint8_and_grayscale():
+    from vision_lab.data.preprocessing import vignette_bbox
+
+    img8 = (_circular_frame() * 255).astype(np.uint8)
+    assert vignette_bbox(img8) != (0, 0, img8.shape[1], img8.shape[0])
+    gray = _circular_frame()[:, :, 0]
+    assert vignette_bbox(gray) != (0, 0, gray.shape[1], gray.shape[0])
+
+
+def test_vignette_bbox_degenerate_input_returns_full_frame():
+    from vision_lab.data.preprocessing import vignette_bbox
+
+    black = np.zeros((16, 16, 3), np.float32)
+    assert vignette_bbox(black) == (0, 0, 16, 16)
