@@ -5,5 +5,9 @@ accelerator: auto
 devices: auto
 precision: bf16-mixed          # без grad-scaler (§11.1)
 sync_batchnorm: true           # для CNN в SSL (§11.1)
-use_distributed_sampler: false # кастомные сэмплеры сами шардят (§5.4, §11.1)
+# Дефолт рассчитан на PK-семейство сэмплеров: они шардят сами (§5.4, §11.1).
+# С ОБЫЧНЫМ DataLoader(shuffle=True) на DDP этот флаг означает, что каждый ранг
+# пройдёт весь датасет — поставьте true. Раннер train.py проверяет это явно и
+# падает с объяснением, а не молча дублирует эпоху.
+use_distributed_sampler: false
 log_every_n_steps: 20
