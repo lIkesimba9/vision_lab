@@ -9,18 +9,26 @@ description: Лоссы и головы vision-lab — где что живёт,
 на любую голову. Свободные метрик-лоссы — в `losses/`.
 
 ## Где что
-- `heads/classification.py` — головы с лоссом внутри (CE/AAM/LDAM/Focal/…).
+- `heads/classification.py` — головы с лоссом внутри. Семейства:
+  softmax (`LinearHead` ce/bce/balanced_softmax + weighted CE, `PolyHead`);
+  multi-label (`MultiLabelHead` bce/asl, мульти-хот таргет);
+  angular (`CosineCEHead`, `AAMHead`, `CosFaceHead`, `SubCenterHead`);
+  long-tail (`FocalHead`, `LDAMHead`, `LogitAdjustHead`, `SeesawHead`, `VSHead`, `DBMHead`);
+  noise-robust (`GCEHead`, `SCEHead`); метрические (`AAMTripletHead`).
 - `heads/primitives.py` — **чистые функции**, переиспользуй их в новых головах:
   `cosine_logits`, `additive_angular_margin`, `subcenter_reduce`, `ldam_margins`,
   `subtract_class_margin`, `class_balanced_weights`, `inverse_freq_weights`,
-  `logit_prior`, `masked_cross_entropy`, `valid_rows`, `has_positive_pairs`.
+  `logit_prior`, `masked_cross_entropy`, `masked_bce_with_logits`,
+  `asymmetric_loss_with_logits`, `valid_rows`, `has_positive_pairs`.
 - `losses/metric.py` — `TripletSemiHardLoss`, `SupConLoss` (свободные, вход
   embeddings+labels; 0 без позитивов; маскируют `-1`).
 
 ## Маскирование -1
 Любая голова/лосс исключает строки с `target == -1` (`valid_rows` /
 `masked_cross_entropy`). Это едино для semi-supervised, multi-task и partially
-labeled — не пиши свою ветку.
+labeled — не пиши свою ветку. Multi-label маскирует **поэлементно**: `-1` в
+одной ячейке мульти-хота = «этот класс у сэмпла не размечен»
+(`masked_bce_with_logits`).
 
 ## Метрик-лоссы: без miner-абстракции (v1)
 Структуру батча (гарантию позитивов) даёт **PK-сэмплер** (`data/samplers.py`) —
