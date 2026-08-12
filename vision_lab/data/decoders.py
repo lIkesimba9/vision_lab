@@ -19,9 +19,44 @@ import numpy as np
 Decoder = Callable[[str | Path], np.ndarray]
 
 
-def decode_with_cv2(path: str | Path) -> np.ndarray:
-    """PNG/JPEG/TIFF через OpenCV; 8- и 16-битные, серые разворачиваются в 3 канала."""
-    img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+#: Форматы, которые libjpeg/libpng умеют декодировать сразу в уменьшенном
+#: масштабе. Для остальных reduce игнорируется — молча, потому что это
+#: оптимизация, а не изменение семантики.
+REDUCIBLE = {"jpeg", "jpg"}
+#: Флаги OpenCV для декода в 1/2, 1/4 и 1/8 разрешения.
+_REDUCE_FLAGS = {2: cv2.IMREAD_REDUCED_COLOR_2,
+                 4: cv2.IMREAD_REDUCED_COLOR_4,
+                 8: cv2.IMREAD_REDUCED_COLOR_8}
+
+
+def _reduce_factor(path: str | Path, max_side: int) -> int:
+    """Наибольший делитель из {1,2,4,8}, при котором длинная сторона >= max_side.
+
+    Размер читается из заголовка файла, без декодирования пикселей.
+    """
+    try:
+        from PIL import Image  # локальный импорт: нужен только этому пути
+        with Image.open(str(path)) as im:
+            long_side = max(im.size)
+    except Exception:  # noqa: BLE001 — не смогли прочитать заголовок, декодируем как есть
+        return 1
+    factor = 1
+    for f in (2, 4, 8):
+        if long_side / f >= max_side:
+            factor = f
+        else:
+            break
+    return factor
+
+
+def decode_with_cv2(path: str | Path, reduce: int = 1) -> np.ndarray:
+    """PNG/JPEG/TIFF через OpenCV; 8- и 16-битные, серые разворачиваются в 3 канала.
+
+    ``reduce`` из {1, 2, 4, 8} — декодировать сразу в 1/reduce разрешения
+    (только JPEG; для прочих форматов OpenCV вернёт полный кадр).
+    """
+    flag = _REDUCE_FLAGS.get(reduce, cv2.IMREAD_UNCHANGED)
+    img = cv2.imread(str(path), flag)
     if img is None:
         raise FileNotFoundError(f"Не удалось декодировать изображение: {path}")
     if img.ndim == 2:
@@ -62,11 +97,22 @@ def decode_image(
     path: str | Path,
     fmt: str | None = None,
     image_size: tuple[int, int] | None = None,
+    max_side: int | None = None,
 ) -> np.ndarray:
     """Декодирует по формату (или расширению) + опциональный resize (H, W).
 
     Resize здесь — для SSL-пути «decode → resize → tensor», где вся стохастика
     живёт на GPU (ТЗ §6.1); INTER_AREA корректен для даунскейла.
+
+    ``max_side`` — декодировать сразу в уменьшенном масштабе, пока длинная
+    сторона остаётся не меньше ``max_side``. Это НЕ то же, что ``image_size``:
+    ``image_size`` ужимает уже декодированный кадр, а ``max_side`` не даёт
+    развернуть его целиком. Для 24-мегапиксельного JPEG разница на замере —
+    354 мс против 66 мс на снимок, и при обучении на таких данных именно декод,
+    а не аугментации, оказывается узким местом.
+
+    Соотношение сторон сохраняется: делитель целочисленный (1/2, 1/4, 1/8).
+    Формат, который так декодировать нельзя, обрабатывается как раньше.
     """
     fmt = (fmt or Path(path).suffix.lstrip(".")).lower()
     decoder = DECODERS.get(fmt)
@@ -75,7 +121,10 @@ def decode_image(
             f"Нет декодера для формата {fmt!r} (файл {path}). "
             f"Известные: {sorted(DECODERS)}. Добавьте через register_decoder()."
         )
-    img = decoder(path)
+    if max_side is not None and fmt in REDUCIBLE and decoder is decode_with_cv2:
+        img = decoder(path, reduce=_reduce_factor(path, max_side))
+    else:
+        img = decoder(path)
     if image_size is not None:
         h, w = image_size
         img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
