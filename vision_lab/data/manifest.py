@@ -127,6 +127,9 @@ class ManifestDataset(Dataset):
             (color constancy, пер-source выравнивание) — одинаковы на train
             и inference.
         image_size: (H, W) resize на декоде (SSL: decode -> resize -> tensor).
+        max_side: декодировать JPEG сразу в уменьшенном масштабе, пока длинная
+            сторона не меньше этого значения; см.
+            :func:`~vision_lab.data.decoders.decode_image`.
         unknown: политика неизвестных меток, см. :func:`map_labels`.
     """
 
@@ -146,6 +149,7 @@ class ManifestDataset(Dataset):
         transform=None,
         preprocessing: Sequence[Preprocessing] = (),
         image_size: tuple[int, int] | None = None,
+        max_side: int | None = None,
         unknown: str = "error",
     ):
         super().__init__()
@@ -171,6 +175,9 @@ class ManifestDataset(Dataset):
         self.transform = transform
         self.preprocessing = tuple(preprocessing)
         self.image_size = tuple(image_size) if image_size is not None else None
+        assert max_side is None or int(max_side) > 0, \
+            f"max_side должен быть положительным, получено {max_side}"
+        self.max_side = int(max_side) if max_side is not None else None
 
         if isinstance(taxonomy, (str, Path)):
             taxonomy = Taxonomy.from_yaml(taxonomy)
@@ -242,7 +249,8 @@ class ManifestDataset(Dataset):
     def __getitem__(self, index: int) -> dict:
         row = self._df.iloc[index]
         fmt = row.get(self.format_column) if self.format_column in self._df.columns else None
-        image = decode_image(self._resolve_path(row[self.input_column]), fmt, self.image_size)
+        image = decode_image(self._resolve_path(row[self.input_column]), fmt,
+                             image_size=self.image_size, max_side=self.max_side)
 
         for prep in self.preprocessing:
             image = prep(image, row)
