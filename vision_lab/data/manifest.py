@@ -128,10 +128,8 @@ class ManifestDataset(Dataset):
             и inference.
         image_size: (H, W) resize на декоде (SSL: decode -> resize -> tensor).
         max_side: декодировать JPEG сразу в уменьшенном масштабе, пока длинная
-            сторона не меньше этого значения. В отличие от image_size не
-            разворачивает кадр целиком и сохраняет соотношение сторон; на
-            многомегапиксельных снимках именно декод, а не аугментации,
-            оказывается узким местом обучения.
+            сторона не меньше этого значения; см.
+            :func:`~vision_lab.data.decoders.decode_image`.
         unknown: политика неизвестных меток, см. :func:`map_labels`.
     """
 
@@ -177,6 +175,8 @@ class ManifestDataset(Dataset):
         self.transform = transform
         self.preprocessing = tuple(preprocessing)
         self.image_size = tuple(image_size) if image_size is not None else None
+        assert max_side is None or int(max_side) > 0, \
+            f"max_side должен быть положительным, получено {max_side}"
         self.max_side = int(max_side) if max_side is not None else None
 
         if isinstance(taxonomy, (str, Path)):
@@ -250,7 +250,7 @@ class ManifestDataset(Dataset):
         row = self._df.iloc[index]
         fmt = row.get(self.format_column) if self.format_column in self._df.columns else None
         image = decode_image(self._resolve_path(row[self.input_column]), fmt,
-                             self.image_size, self.max_side)
+                             image_size=self.image_size, max_side=self.max_side)
 
         for prep in self.preprocessing:
             image = prep(image, row)
