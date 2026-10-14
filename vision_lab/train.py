@@ -66,6 +66,44 @@ def check_distributed_sampler(trainer: pl.Trainer, train_loader) -> None:
         "случай."
     )
 
+from torch.utils.data import DataLoader
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
+from torch.utils.data import DataLoader
+
+
+def build_train_dataloader(loader_cfg):
+    dataset = instantiate(loader_cfg.dataset, _convert_="all")
+
+    common_kwargs = {
+        "dataset": dataset,
+        "num_workers": loader_cfg.get("num_workers", 0),
+        "pin_memory": loader_cfg.get("pin_memory", False),
+        "persistent_workers": loader_cfg.get("persistent_workers", False),
+    }
+
+    if loader_cfg.get("batch_sampler") is not None:
+        # Режим с собственным batch_sampler.
+        # batch_size, shuffle и drop_last задаются внутри семплера.
+        batch_sampler = instantiate(
+            loader_cfg.batch_sampler,
+            labels=dataset.labels,
+            _convert_="all",
+        )
+
+        return DataLoader(
+            **common_kwargs,
+            batch_sampler=batch_sampler,
+        )
+
+    # Обычный режим DataLoader.
+    return DataLoader(
+        **common_kwargs,
+        batch_size=loader_cfg.get("batch_size", 1),
+        shuffle=loader_cfg.get("shuffle", False),
+        drop_last=loader_cfg.get("drop_last", False),
+    )
+
 
 def run(cfg: DictConfig) -> pl.Trainer:
     """Собирает компоненты из конфига и запускает fit; возвращает Trainer.
@@ -85,7 +123,7 @@ def run(cfg: DictConfig) -> pl.Trainer:
         )
 
     module = instantiate(cfg.module, _convert_="all")
-    train_loader = instantiate(cfg.data.train_dataloader, _convert_="all")
+    train_loader = build_train_dataloader(cfg.data.train_dataloader)#instantiate(cfg.data.train_dataloader, _convert_="all")
     val_loader = (instantiate(cfg.data.val_dataloader, _convert_="all")
                   if "val_dataloader" in cfg.data else None)
 
